@@ -56,3 +56,17 @@ class Decoder(Layer):
 
         return x
 
+
+class VAE(Layer):
+    def __init__(self, model_config):
+        super(VAE, self).__init__()
+        self.model_config = model_config
+
+        self.encoder = Encoder(model_config)
+        self.decoder = Decoder(model_config)
+    
+    def call(self, x):
+        encoder_output = self.encoder(x)
+        decoder_output = self.decoder(encoder_output, x.shape[-1])
+
+        return decoder_output
