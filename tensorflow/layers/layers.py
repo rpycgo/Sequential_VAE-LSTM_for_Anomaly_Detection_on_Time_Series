@@ -69,4 +69,23 @@ class VAE(Layer):
         encoder_output = self.encoder(x)
         decoder_output = self.decoder(encoder_output, x.shape[-1])
 
-        return decoder_output
+class NormalityConfidenceWeight(Layer):
+    def __init__(self, config=model_config):
+        super(NormalityConfidenceWeight, self).__init__()
+        self.config = config
+        self.D0 = self.config.D0
+    
+    def call(self, x):
+        x = tf.cast(x, dtype=tf.complex64)
+        fft = tf.signal.fft(x[:, :, 0])
+        A = tf.math.abs(fft)        
+        L = tf.math.log(A)        
+        _R = L - tf.reduce_mean(L, axis=-1, keepdims=True)
+        _R = tf.cast(_R, dtype=tf.complex64)
+        S = abs(tf.signal.ifft(_R))
+
+        D = (S - tf.reduce_mean(S, axis=-1, keepdims=True)) / tf.reduce_mean(S, axis=-1, keepdims=True)
+        w_n = 1 - 1 / (1 + tf.math.exp(-(D - self.D0)))
+
+        return w_n[:, :, tf.newaxis]
+
