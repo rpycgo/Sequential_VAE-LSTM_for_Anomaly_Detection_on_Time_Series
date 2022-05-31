@@ -48,3 +48,11 @@ def build_vae_model(config=model_config):
     
     return Model(input, [z_mean, z_log_var, decoder_output])
 
+
+def build_lstm_layer(config=model_config):
+    input = Input(shape=(config.time_sequence, 1), batch_size=config.batch_size)
+    x = LSTM(units=config.h_t, return_sequences=True)(input)
+    output = Dense(units=1)(x)
+
+    return Model(input, output, name='lstm')
+
