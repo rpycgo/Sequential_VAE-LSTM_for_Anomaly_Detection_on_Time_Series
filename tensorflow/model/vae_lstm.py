@@ -21,3 +21,22 @@ def build_encoder(x, config=model_config):
     
     return Model(input, [z_mean, z_log_var, Sampling()(z_mean, z_log_var)], name='encoder')
 
+
+def build_decoder(x, config=model_config):
+    input = Input(shape=config.latent_dim, batch_size=x.shape[0])
+    _x = Dense(
+        units=config.time_sequence * x.shape[-1], 
+        activation='relu', 
+        name='decoder_fc0'
+        )(input)
+    _x = Reshape(
+        target_shape=(config.time_sequence, x.shape[-1]), 
+        name='decoder_reshape'
+        )(_x)
+    _x = Dense(units=config.decoder.get('fc1_units'), activation="relu", name="decoder_fc1")(_x)
+    _x = Dense(units=config.decoder.get('fc2_units'), activation="relu", name="decoder_fc2")(_x)
+    _x = Dense(units=config.decoder.get('fc3_units'), activation="relu", name="decoder_fc3")(_x)
+    output = Dense(units=x.shape[-1], activation="relu", name="decoder_output")(_x)
+    
+    return Model(input, output, name='decoder')
+
