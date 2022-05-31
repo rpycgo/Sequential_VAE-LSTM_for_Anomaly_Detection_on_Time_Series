@@ -40,3 +40,11 @@ def build_decoder(x, config=model_config):
     
     return Model(input, output, name='decoder')
 
+
+def build_vae_model(config=model_config):
+    input = Input(shape=(config.time_sequence, 1), batch_size=config.batch_size)
+    z_mean, z_log_var, encoder_output = build_encoder(input)(input)
+    decoder_output = build_decoder(input)(encoder_output)
+    
+    return Model(input, [z_mean, z_log_var, decoder_output])
+
