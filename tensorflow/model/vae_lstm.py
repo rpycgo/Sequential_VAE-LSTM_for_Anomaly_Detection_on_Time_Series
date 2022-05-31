@@ -56,3 +56,73 @@ def build_lstm_layer(config=model_config):
 
     return Model(input, output, name='lstm')
 
+
+class VAELSTM(Model):
+    def __init__(self, model_config):
+        super(VAELSTM, self).__init__()
+        self.config = model_config
+
+        self.model = build_lstm_layer()
+        self.vae = build_vae_model()
+        self.normality_confidence_weight = NormalityConfidenceWeight()
+
+        self.reconstruction_loss = MeanSquaredError(name='reconstruction_loss')
+        self.kl_loss = MeanSquaredError(name='kl_loss')
+        self.vae_loss = MeanSquaredError(name='vae_loss')
+        self.lstm_loss = MeanSquaredError(name='lstm_loss')
+        self.pad_loss = MeanSquaredError(name='pad_loss')
+        self.f1 = MeanSquaredError(name='f1')
+    
+    @property
+    def metrics(self):
+        return [
+            self.reconstruction_loss,
+            self.kl_loss,
+            self.vae_loss,
+            self.lstm_loss,
+            self.pad_loss,
+            self.f1
+        ]
+
+    def train_step(self, data, real, anomal_true):
+        with tf.GradientTape as tape:
+            z_mean, z_log_var, reconstructed_data = self.vae(data)
+            w_n = self.normality_confidence_weight(data)
+
+            reconstruction_loss = tf.sqrt(tf.reduce_sum(tf.square((w_n * (data - reconstructed_data)))))
+            _kl_loss = 0.5 * self.config.regularization.get('beta') * tf.reduce_mean(w_n) * (-tf.math.log(tf.square(z_log_var)) + tf.square(z_mean) + tf.square(z_log_var) -1)
+            kl_loss = tf.reduce_mean(tf.reduce_sum(_kl_loss, axis=1))
+            vae_loss = reconstruction_loss + kl_loss
+
+            abs_diff = tf.abs(data - reconstructed_data)
+            predicted_anormal_point = tf.where(abs_diff > (self.config.k*tf.math.reduce_std(abs_diff, axis=1, keepdims=True)), 1, 0)
+            f1 = f1_score(anomal_true, predicted_anormal_point)
+            self.f1.update_state(f1)
+
+        grads = tape.gradient(vae_loss, self.vae.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.vae.trainable_weights))
+        
+
+        self.reconstruction_loss.update_state(reconstruction_loss)
+        self.kl_loss.update_state(kl_loss)
+        self.vae_loss.update_state(vae_loss)
+
+        with tf.GradientTape as tape:
+            y = self.model(reconstructed_data)
+            
+            lstm_loss = self.config.regularization.get('lambda') * tf.reduce_mean(w_n) * tf.sqrt(tf.reduce_sum(tf.square(real - y)))
+            pad_loss = vae_loss + lstm_loss
+        
+        grads = tape.gradient(lstm_loss, self.model.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
+        self.lstm_loss.update_state(lstm_loss)
+        self.pad_loss.update_state(pad_loss)
+
+        return {
+            'reconstruction_loss': self.reconstruction_loss.result(),
+            'kl_loss': self.kl_loss.result(),
+            'vae_loss': self.vae_loss.result(),
+            'lstm_loss': self.lstm_loss.result(),
+            'pad_loss': self.pad_loss.result(),
+            'f1': f1
+        }
